@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"math/rand"
 	"os"
@@ -9,30 +8,60 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/widget"
 )
 
-func readline(out interface{}) {
-	in := bufio.NewReader(os.Stdin)
-	switch typedout := out.(type) {
-	case *string:
-		// Error usually EOF, which shouldn't even happen with Stdin
-		// default return value should be the right thing nevertheless.
-		input, _ := in.ReadString('\n')
-		*typedout = strings.TrimRight(input, "\n")
-	case *int:
-		// when ParseInt returns an error, the default value it returns
-		// is still acceptable for a game situation, so ignore it
-		input, _ := in.ReadString('\n')
-		intval, _ := strconv.ParseInt(regexp.MustCompile(`[^0-9]`).ReplaceAllString(input, ""), 10, 0)
+type output struct {
+	w *widget.Label
+}
 
-		*typedout = int(intval) // conversion from int64 to int, should work because of the last 0 argument in ParseInt
-	default:
-		panic("readline invoked with non-pointer type or pointer to unsupported type.")
+func (o *output) Print(args ...interface{}) {
+	o.w.SetText(o.w.Text + fmt.Sprint(args...))
+}
+
+func (o *output) Println(args ...interface{}) {
+	o.w.SetText(o.w.Text + fmt.Sprintln(args...))
+}
+
+func (o *output) Printf(s string, args ...interface{}) {
+	o.w.SetText(o.w.Text + fmt.Sprintf(s, args...))
+}
+
+var out output
+
+var in *widget.Entry
+
+var button *widget.Button
+
+func readline(o interface{}) {
+	tapped := make(chan bool)
+	button.OnTapped = func() {
+		switch typedout := o.(type) {
+		case *string:
+			// Error usually EOF, which shouldn't even happen with Stdin
+			// default return value should be the right thing nevertheless.
+			*typedout = strings.TrimRight(in.Text, "\n")
+		case *int:
+			// when ParseInt returns an error, the default value it returns
+			// is still acceptable for a game situation, so ignore it
+			intval, _ := strconv.ParseInt(regexp.MustCompile(`[^0-9]`).ReplaceAllString(in.Text, ""), 10, 0)
+			*typedout = int(intval) // conversion from int64 to int, should work because of the last 0 argument in ParseInt
+		default:
+			panic("readline invoked with non-pointer type or pointer to unsupported type.")
+		}
+		out.w.SetText("")
+		in.SetText("")
+		tapped <- true
 	}
+	<-tapped
 }
 
 func klariguLudon(min, max, skip int) {
-	fmt.Printf(`Bonvenon ĉe "Kaptu la muson"
+	out.Printf(`Bonvenon ĉe "Kaptu la muson"
 
 La celo de la ludo estas diveni numeron de %d ĝis %d.
 Vi povas provi tion unu post la alia.
@@ -57,7 +86,7 @@ func skipDoes(skip int) string {
 }
 
 func askPlayers() (n int) {
-	fmt.Print("Kiom da ludantoj estas? ")
+	out.Print("Kiom da ludantoj estas? ")
 	readline(&n)
 	if n < 1 {
 		return 2
@@ -68,7 +97,7 @@ func askPlayers() (n int) {
 func askNames(n int) (names []string) {
 	for i := 1; i <= n; i++ {
 		name := ""
-		fmt.Printf("Ludanto %d, kiel mi nomu vin? ", i)
+		out.Printf("Ludanto %d, kiel mi nomu vin? ", i)
 		readline(&name)
 		names = append(names, name)
 	}
@@ -104,17 +133,17 @@ func getNumber(min, max, skip int, guessed chan bool) (nchan chan int) {
 }
 
 func play(name string, number int) (won bool) {
-	fmt.Printf("Estas la vico de %s: kiu numero estas? ", name)
+	out.Printf("Estas la vico de %s: kiu numero estas? ", name)
 	var guess int
 	readline(&guess)
 	switch {
 	case number == guess:
-		fmt.Println("Prave, la numero estas", number)
+		out.Println("Prave, la numero estas", number)
 		return true
 	case number > guess:
-		fmt.Println("Ne, la numero estas pli alta ol", guess)
+		out.Println("Ne, la numero estas pli alta ol", guess)
 	case number < guess:
-		fmt.Println("Ne, la numero estas pli malalta ol", guess)
+		out.Println("Ne, la numero estas pli malalta ol", guess)
 
 	}
 	return false
@@ -122,7 +151,7 @@ func play(name string, number int) (won bool) {
 
 func again() bool {
 	for {
-		fmt.Print("Ĉu ludi denove, jes aŭ ne? ")
+		out.Print("Ĉu ludi denove, jes aŭ ne? ")
 		answer := ""
 		readline(&answer)
 		switch answer {
@@ -135,42 +164,64 @@ func again() bool {
 }
 
 func main() {
-	rand.Seed(int64(time.Now().Nanosecond()))
-	min, max, skip := 1, 100, 1
-	switch len(os.Args) {
-	case 0:
-		panic("This shouldn't happen: os.Args is an empty slice.")
-	case 1:
-		fmt.Print("(Vi ludas kun la defaŭltaj valoroj. Se vi volas pli grandan defion, provu ŝanĝi la parametrojn! Nur unu parametro indikas la plej altan numeron, se vi indikas pli tio estas sinsekve minimumo, maksimumo, saltogrando. Negativa saltogrando hazardigas la saltograndon je ĝia absoluta valoro. Bonan muskaptadon!)\n\n")
-	case 2:
-		fmt.Sscan(os.Args[1], &max)
-	case 3:
-		fmt.Sscan(os.Args[1]+" "+os.Args[2], &min, &max)
-	default:
-		fmt.Sscan(os.Args[1]+" "+os.Args[2]+" "+os.Args[3], &min, &max, &skip)
+	a := app.New()
+	w := a.NewWindow("Muskapti")
+	w.Resize(fyne.NewSize(640,480))
+
+	out.w = widget.NewLabel("Bonvenon al Muskapti! Ĉi tiu ludo baldaŭ komenciĝas. Se io misfunkcias, provu ŝanĝi la grandecon de la ekrano.")
+	out.w.Wrapping = fyne.TextWrapWord
+	in = widget.NewEntry()
+	button = widget.NewButton("Ek!", nil)
+	in.OnSubmitted = func (_ string) {
+		button.OnTapped()
 	}
-	klariguLudon(min, max, skip)
-	players := askPlayers()
-	names := askNames(players)
-	guessed := make(chan bool)
-	numbers := getNumber(min, max, skip, guessed)
-	for {
-		for _, name := range names {
-			select {
-			case number := <-numbers:
-				won := play(name, number)
-				if won {
-					fmt.Printf("Gratulon %s, vi gajnis!\n", name)
-					if again() {
-						guessed <- true
-					} else {
-						fmt.Println("Ĝis revido!")
-						return
+	c := container.NewVBox(out.w, in, button)
+	w.SetContent(c)
+	out.w.SetText("")
+
+	go func() {
+		rand.Seed(int64(time.Now().Nanosecond()))
+		min, max, skip := 1, 100, 1
+		switch len(os.Args) {
+		case 0:
+			panic("This shouldn't happen: os.Args is an empty slice.")
+		case 1:
+			out.Print("(Vi ludas kun la defaŭltaj valoroj. Se vi volas pli grandan defion, provu ŝanĝi la parametrojn! Nur unu parametro indikas la plej altan numeron, se vi indikas pli tio estas sinsekve minimumo, maksimumo, saltogrando. Negativa saltogrando hazardigas la saltograndon je ĝia absoluta valoro. Bonan muskaptadon!)\n\n")
+		case 2:
+			fmt.Sscan(os.Args[1], &max)
+		case 3:
+			fmt.Sscan(os.Args[1]+" "+os.Args[2], &min, &max)
+		default:
+			fmt.Sscan(os.Args[1]+" "+os.Args[2]+" "+os.Args[3], &min, &max, &skip)
+		}
+		klariguLudon(min, max, skip)
+		players := askPlayers()
+		names := askNames(players)
+		guessed := make(chan bool)
+		numbers := getNumber(min, max, skip, guessed)
+		for {
+			for _, name := range names {
+				select {
+				case number := <-numbers:
+					won := play(name, number)
+					if won {
+						out.Printf("Gratulon %s, vi gajnis!\n", name)
+						if again() {
+							guessed <- true
+						} else {
+							out.Println("Ĝis revido!")
+							button.SetText("Ĝis!")
+							button.OnTapped = func() {
+								w.Close()
+							}
+							select{}
+						}
 					}
+				case <-guessed:
+					numbers = getNumber(min, max, skip, guessed)
 				}
-			case <-guessed:
-				numbers = getNumber(min, max, skip, guessed)
 			}
 		}
-	}
+	}()
+	w.ShowAndRun()
 }
